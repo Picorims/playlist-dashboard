@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SpotifyEndpoint from "$lib/api";
+	import SpotifyEndpoint from '$lib/api';
 
 	/*
     Playlist organizer is a tool to see how playlists are organized and modify them.
@@ -19,23 +19,28 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
     */
 
-   function launchAuth() {
-        SpotifyEndpoint.launchSpotifyAuth();
-   }
+	let error: string | null = null;
+
+	(async () => {
+		await SpotifyEndpoint.callback((err) => {
+			error = err;
+		});
+
+        console.log("All good!");
+	})();
 </script>
 
-<div class="container">
-	<h1>Playlist dashboard</h1>
+{#if error}
+	<div class="container">
+		<h1>Oops!</h1>
 
-	<h2>A tool to help you organize your playlists!</h2>
+		<h2>Authentication failed!</h2>
 
-	<p>
-		This tool was created for private use. No ID or key is provided, and you should create your own
-		config if you want to use it. Sorry!
-	</p>
-
-	<button on:click={launchAuth}>Log in</button>
-</div>
+		<p>
+			{error}
+		</p>
+	</div>
+{/if}
 
 <style>
 	div.container {
