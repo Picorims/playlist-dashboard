@@ -29,7 +29,22 @@
 	setContext('tokenStore', tokenStore);
 </script>
 
-<slot />
+<header>
+	<h1>Playlist Dashboard</h1>
+</header>
+
+<section>
+	<slot />
+</section>
+
+<footer>
+	<p>
+		Playlist organizer is a tool to see how playlists are organized and modify them.
+	</p>
+	<p>
+		Copyright (C) 2024  Charly Schmidt alias Picorims &lt;picorims.contact@gmail.com&gt;
+	</p>
+</footer>
 
 <style>
 	/*https://www.realtimecolors.com/?colors=d4f8f6-051d1c-86ebea-471994-29ece2&fonts=Poppins-Poppins*/
@@ -187,6 +202,40 @@
 		--radius-small: 4px;
 	}
 
+	:global(body) {
+		margin: 0;
+		padding: 0;
+	}
+
+	header {
+		width: 100%;
+		background-color: var(--background-100);
+		padding: 1rem 3rem;
+	}
+	
+	footer {
+		position: fixed;
+		bottom: 0;
+		width: 100%;
+		padding: 0.5rem 3rem;
+		font-size: 0.8rem;
+		background-color: var(--background-100);
+	}
+
+	header h1 {
+		color: var(--primary);
+		margin: 0;
+	}
+
+	section {
+		padding: 1rem 3rem;
+	}
+
+
+
+
+
+
 	:global(button) {
 		font-size: 1.1rem;
 		padding: 0.25em 0.5em;
@@ -201,5 +250,17 @@
 		cursor: pointer;
 		transform: scale(1.1);
 		transition: 0.1s;
+	}
+
+	:global(button.accent-btn) {
+		background-color: var(--accent);
+	}
+
+	:global(.card) {
+		background-color: var(--background-100);
+		border-radius: var(--radius-small);
+		padding: 1rem;
+		margin: 1rem;
+		box-shadow: 0 4px 8px var(--background-50);
 	}
 </style>

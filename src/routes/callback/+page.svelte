@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SpotifyEndpoint from '$lib/api';
+	import { goto } from '$app/navigation';
 
 	/*
     Playlist organizer is a tool to see how playlists are organized and modify them.
@@ -27,6 +28,7 @@
 		});
 
         console.log("All good!");
+		goto("/home");
 	})();
 </script>
 

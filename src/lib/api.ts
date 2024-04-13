@@ -19,24 +19,84 @@
 import Config from './config';
 
 export interface Token {
-    access_token: string;
-    token_type: string;
-    expires_in: number;
-    refresh_token: string;
-    scope: string;
+	access_token: string;
+	token_type: string;
+	expires_in: number;
+	refresh_token: string;
+	scope: string;
 }
 
 export interface TokenData {
-    token: Token;
-    lastRefresh: Date;
+	token: Token;
+	lastRefresh: Date;
+}
+
+export interface APIError {
+	status: number;
+	message: string;
+}
+
+export interface Playlist {
+    // https://developer.spotify.com/documentation/web-api/reference/get-a-list-of-current-users-playlists
+	collaborative: boolean;
+	description: string;
+	external_urls: {
+		spotify: string;
+	};
+	href: string;
+	id: string;
+	images: {
+		url: string;
+		height: number | null;
+		width: number | null;
+	}[];
+	name: string;
+	owner: {
+		external_urls: {
+			spotify: string;
+		};
+        followers: {
+            href: string | null;
+            total: number;
+        };
+        href: string;
+        id: string;
+        type: string;
+        uri: string;
+        display_name: string | null;
+	};
+    public: boolean;
+    snapshot_id: string;
+    tracks: {
+        href: string;
+        total: number;
+    }
+    type: "playlist";
+    uri: string;
+}
+
+export interface Playlists {
+	href: string;
+	limit: number;
+	next: string | null;
+	offset: number;
+	previous: string | null;
+	total: number;
+	items: Playlist[];
+}
+
+type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+
+class Environment {
+	public static readonly redirectUri = 'http://localhost:5173/callback';
+	public static readonly tokenUrl = 'https://accounts.spotify.com/api/token';
+	public static readonly clientId = Config.publicId;
+	public static readonly baseUrl = 'https://api.spotify.com/v1/';
 }
 
 class SpotifyEndpoint {
 	// https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow#request-user-authorization
-    private static readonly clientId = Config.publicId;
-    private static readonly redirectUri = 'http://localhost:5173/callback';
-    private static readonly tokenUrl = 'https://accounts.spotify.com/api/token';
-    private static tokenData: TokenData | null = null;
+	private static tokenData: TokenData | null = null;
 
 	private static generateRandomString(length: number): string {
 		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -62,7 +122,7 @@ class SpotifyEndpoint {
 		const hashed = await this.sha256(codeVerifier);
 		const codeChallenge = this.base64encode(hashed);
 
-		const scope = 'user-read-private';
+		const scope = 'user-read-private playlist-read-private';
 		const authUrl = new URL('https://accounts.spotify.com/authorize');
 
 		// generated in the previous step
@@ -70,126 +130,180 @@ class SpotifyEndpoint {
 
 		const params = {
 			response_type: 'code',
-			client_id: this.clientId,
+			client_id: Environment.clientId,
 			scope,
 			code_challenge_method: 'S256',
 			code_challenge: codeChallenge,
-			redirect_uri: this.redirectUri
+			redirect_uri: Environment.redirectUri
 		};
 
 		authUrl.search = new URLSearchParams(params).toString();
 		window.location.href = authUrl.toString();
 	}
 
-	public static async callback(onerror: (error: string | null) => void){
+	/**
+	 * Handle spotify authentication redirection
+	 * @param onerror called in case of a request error
+	 * @returns
+	 */
+	public static async callback(onerror: (error: string | null) => void) {
 		const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('error')) {
-            onerror(urlParams.get('error'));
-            console.error("Authentication error: " + urlParams.get('error'));
-            return;
-        }
-        
-        const code = urlParams.get('code');
-        if (!code) {
-            onerror("No code in URL");
-            console.error("No code in URL");
-            return;
-        } else {
-            this.getFirstToken(code, onerror);
-        }
+		if (urlParams.has('error')) {
+			onerror(urlParams.get('error'));
+			console.error('Authentication error: ' + urlParams.get('error'));
+			return;
+		}
 
+		const code = urlParams.get('code');
+		if (!code) {
+			onerror('No code in URL');
+			console.error('No code in URL');
+			return;
+		} else {
+			this.getFirstToken(code, onerror);
+		}
 	}
 
-    private static async getFirstToken(code: string, onerror: (error: string) => void) {
-        // stored in the previous step
-        const codeVerifier = localStorage.getItem('code_verifier');
-        if (!codeVerifier) {
-            onerror('No code verifier in local storage');
-            console.error('No code verifier in local storage');
-            return;
-        }
-      
-        const payload = {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            client_id: this.clientId,
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: this.redirectUri,
-            code_verifier: codeVerifier as string,
-          }),
-        }
-      
-        const body = await fetch(this.tokenUrl, payload);
-        if (body.status !== 200) {
-            onerror('Failed to get token');
-            console.error('Failed to get token');
-            return;
-        }
-        const response = await body.json();
+	/**
+	 * Initialize the token data
+	 * @param code provided by callback
+	 * @param onerror in case of a request error
+	 * @returns
+	 */
+	private static async getFirstToken(code: string, onerror: (error: string) => void) {
+		// stored in the previous step
+		const codeVerifier = localStorage.getItem('code_verifier');
+		if (!codeVerifier) {
+			onerror('No code verifier in local storage');
+			console.error('No code verifier in local storage');
+			return;
+		}
 
-        if (response.error) {
-            onerror(response.error + ": " + response.error_description);
-            console.error(response.error + ": " + response.error_description);
-            return;
-        }
-      
-        this.tokenData = {token: response as Token, lastRefresh: new Date()};
-        console.log(response);
-    }
+		const payload = {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded'
+			},
+			body: new URLSearchParams({
+				client_id: Environment.clientId,
+				grant_type: 'authorization_code',
+				code,
+				redirect_uri: Environment.redirectUri,
+				code_verifier: codeVerifier as string
+			})
+		};
 
-    private static async getRefreshToken() {
+		const body = await fetch(Environment.tokenUrl, payload);
+		if (body.status !== 200) {
+			onerror('Failed to get token');
+			console.error('Failed to get token');
+			return;
+		}
+		const response = await body.json();
 
-        // refresh token that has been previously stored
-        const refreshToken = this.tokenData?.token.refresh_token;
+		if (response.error) {
+			onerror(response.error + ': ' + response.error_description);
+			console.error(response.error + ': ' + response.error_description);
+			return;
+		}
 
-        if (!refreshToken) {
-            throw new Error('No refresh token');
-        } else {
-            const payload = {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-              },
-              body: new URLSearchParams({
-                grant_type: 'refresh_token',
-                refresh_token: refreshToken,
-                client_id: this.clientId
-              }),
-            }
-            const body = await fetch(this.tokenUrl, payload);
-            if (body.status !== 200) {
-                console.error('Failed to get token');
-                return;
-            }
-            const response = await body.json();
-    
-            if (response.error) {
-                console.error(response.error + ": " + response.error_description);
-                return;
-            }
-            
-            this.tokenData = {token: response as Token, lastRefresh: new Date()};
-        }
-    }
+		this.tokenData = { token: response as Token, lastRefresh: new Date() };
+		console.log(response);
+	}
 
-    private static async getCurrentToken() {
-        if (!this.tokenData) {
-            throw new Error('No token');
-        }
+	private static async getRefreshToken() {
+		// refresh token that has been previously stored
+		const refreshToken = this.tokenData?.token.refresh_token;
 
-        const now = new Date();
-        const lastRefresh = this.tokenData.lastRefresh;
+		if (!refreshToken) {
+			throw new Error('No refresh token');
+		} else {
+			const payload = {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded'
+				},
+				body: new URLSearchParams({
+					grant_type: 'refresh_token',
+					refresh_token: refreshToken,
+					client_id: Environment.clientId
+				})
+			};
+			const body = await fetch(Environment.tokenUrl, payload);
+			if (body.status !== 200) {
+				console.error('Failed to get token');
+				return;
+			}
+			const response = await body.json();
 
-        if (now.getTime() - lastRefresh.getTime() > this.tokenData.token.expires_in * 1000) {
-            await this.getRefreshToken();
-        }
+			if (response.error) {
+				console.error(response.error + ': ' + response.error_description);
+				return;
+			}
 
-        return this.tokenData.token.access_token;
-    }
+			this.tokenData = { token: response as Token, lastRefresh: new Date() };
+		}
+	}
+
+	/**
+	 *
+	 * @returns the current token, refresh it using the refresh token if needed
+	 */
+	private static async getCurrentToken() {
+		if (!this.tokenData) {
+			throw new Error('No token');
+		}
+
+		const now = new Date();
+		const lastRefresh = this.tokenData.lastRefresh;
+
+		if (now.getTime() - lastRefresh.getTime() > this.tokenData.token.expires_in * 1000) {
+			await this.getRefreshToken();
+		}
+
+		return this.tokenData.token.access_token;
+	}
+
+	/**
+	 * generic API call
+	 * @param url
+	 * @param onerror
+	 */
+	private static async fetchSpotifyApi(
+		url: string,
+		method: HTTPMethod,
+		body: Record<string, string>,
+		onerror: (error: APIError) => void = this.defaultOnError
+	) {
+		const token = await this.getCurrentToken();
+		const payload = {
+			method,
+			headers: {
+				Authorization: `Bearer ${token}`
+			},
+			body: new URLSearchParams(body)
+		};
+
+		const response = await fetch(Environment.baseUrl + url, payload);
+		const JSON = await response.json();
+		if (response.status >= 200 && response.status < 300) {
+			return JSON;
+		} else {
+			onerror(JSON.error);
+			return null;
+		}
+	}
+
+	private static defaultOnError(error: APIError) {
+		console.error(`Error ${error.status}: ${error.message}`);
+	}
+
+	public static async getUserPlaylists(limit: number = 20, offset: number = 0): Promise<Playlists | null> {
+		return this.fetchSpotifyApi('me/playlists', 'GET', {
+			limit: limit.toString(),
+			offset: offset.toString()
+		});
+	}
 }
 
 export default SpotifyEndpoint;

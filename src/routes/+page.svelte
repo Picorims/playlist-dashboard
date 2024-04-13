@@ -24,9 +24,7 @@
    }
 </script>
 
-<div class="container">
-	<h1>Playlist dashboard</h1>
-
+<div class="container card">
 	<h2>A tool to help you organize your playlists!</h2>
 
 	<p>
@@ -34,7 +32,7 @@
 		config if you want to use it. Sorry!
 	</p>
 
-	<button on:click={launchAuth}>Log in</button>
+	<button class="accent-btn" on:click={launchAuth}>Sign in with Spotify</button>
 </div>
 
 <style>
