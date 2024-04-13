@@ -1,8 +1,4 @@
-<script lang="ts">
-	import SpotifyEndpoint from '$lib/api';
-	import { goto } from '$app/navigation';
-
-	/*
+/*
     Playlist organizer is a tool to see how playlists are organized and modify them.
     Copyright (C) 2024  Charly Schmidt alias Picorims<picorims.contact@gmail.com>
 
@@ -18,33 +14,12 @@
 
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
-    */
+*/
 
-	let error: string | null = null;
-	const spotifyEndpoint = new SpotifyEndpoint();
+import type { Playlists } from "./api";
 
-	(async () => {
-		await spotifyEndpoint.callback();
+class APICache {
+    public playlists: Playlists | null = null;
+}
 
-        console.log("All good!");
-		goto("/home");
-	})();
-</script>
-
-{#if error}
-	<div class="container">
-		<h1>Oops!</h1>
-
-		<h2>Authentication failed!</h2>
-
-		<p>
-			{error}
-		</p>
-	</div>
-{/if}
-
-<style>
-	div.container {
-		text-align: center;
-	}
-</style>
+export default APICache;

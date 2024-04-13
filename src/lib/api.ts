@@ -16,7 +16,10 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import { getContext } from 'svelte';
+import APICache from './cache';
 import Config from './config';
+import { get, type Writable } from 'svelte/store';
 
 export interface Token {
 	access_token: string;
@@ -31,13 +34,20 @@ export interface TokenData {
 	lastRefresh: Date;
 }
 
-export interface APIError {
+export interface APIErrorJSON {
 	status: number;
 	message: string;
 }
 
+class APIError extends Error {
+    constructor(public json: APIErrorJSON) {
+        super(json.message);
+        Object.setPrototypeOf(this, APIError.prototype);
+    }
+}
+
 export interface Playlist {
-    // https://developer.spotify.com/documentation/web-api/reference/get-a-list-of-current-users-playlists
+	// https://developer.spotify.com/documentation/web-api/reference/get-a-list-of-current-users-playlists
 	collaborative: boolean;
 	description: string;
 	external_urls: {
@@ -55,24 +65,24 @@ export interface Playlist {
 		external_urls: {
 			spotify: string;
 		};
-        followers: {
-            href: string | null;
-            total: number;
-        };
-        href: string;
-        id: string;
-        type: string;
-        uri: string;
-        display_name: string | null;
+		followers: {
+			href: string | null;
+			total: number;
+		};
+		href: string;
+		id: string;
+		type: string;
+		uri: string;
+		display_name: string | null;
 	};
-    public: boolean;
-    snapshot_id: string;
-    tracks: {
-        href: string;
-        total: number;
-    }
-    type: "playlist";
-    uri: string;
+	public: boolean;
+	snapshot_id: string;
+	tracks: {
+		href: string;
+		total: number;
+	};
+	type: 'playlist';
+	uri: string;
 }
 
 export interface Playlists {
@@ -96,28 +106,63 @@ class Environment {
 
 class SpotifyEndpoint {
 	// https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow#request-user-authorization
-	private static tokenData: TokenData | null = null;
+	private tokenStore: Writable<TokenData | null>;
+	private apiCacheStore: Writable<APICache>;
+	private _tokenData: TokenData | null = null;
+	private _cache: APICache = new APICache();
 
-	private static generateRandomString(length: number): string {
+	private get tokenData(): TokenData | null {
+		return this._tokenData;
+	}
+	private set tokenData(value: TokenData | null) {
+		this._tokenData = value;
+		this.tokenStore.set(value);
+	}
+	private get cache(): APICache {
+		return this._cache;
+	}
+	private set cache(value: APICache) {
+		this._cache = value;
+		this.apiCacheStore.set(value);
+	}
+
+	constructor() {
+		this.tokenStore = getContext('tokenStore');
+		this.apiCacheStore = getContext('apiCacheStore');
+
+		this._tokenData = get(this.tokenStore);
+		this._cache = get(this.apiCacheStore);
+
+		console.log(this.tokenData, this.cache);
+
+		this.tokenStore.subscribe((value) => {
+			console.log('tokenStore', value);
+		});
+		this.apiCacheStore.subscribe((value) => {
+			console.log('apiCacheStore', value);
+		});
+	}
+
+	private generateRandomString(length: number): string {
 		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 		const values = crypto.getRandomValues(new Uint8Array(length));
 		return values.reduce((acc, x) => acc + possible[x % possible.length], '');
 	}
 
-	private static async sha256(plain: string) {
+	private async sha256(plain: string) {
 		const encoder = new TextEncoder();
 		const data = encoder.encode(plain);
 		return window.crypto.subtle.digest('SHA-256', data);
 	}
 
-	private static base64encode(input: ArrayBuffer) {
+	private base64encode(input: ArrayBuffer) {
 		return btoa(String.fromCharCode(...new Uint8Array(input)))
 			.replace(/=/g, '')
 			.replace(/\+/g, '-')
 			.replace(/\//g, '_');
 	}
 
-	public static async launchSpotifyAuth() {
+	public async launchSpotifyAuth() {
 		const codeVerifier = this.generateRandomString(64);
 		const hashed = await this.sha256(codeVerifier);
 		const codeChallenge = this.base64encode(hashed);
@@ -143,40 +188,32 @@ class SpotifyEndpoint {
 
 	/**
 	 * Handle spotify authentication redirection
-	 * @param onerror called in case of a request error
 	 * @returns
 	 */
-	public static async callback(onerror: (error: string | null) => void) {
+	public async callback() {
 		const urlParams = new URLSearchParams(window.location.search);
 		if (urlParams.has('error')) {
-			onerror(urlParams.get('error'));
-			console.error('Authentication error: ' + urlParams.get('error'));
-			return;
+			throw new Error('Authentication error: ' + urlParams.get('error'));
 		}
 
 		const code = urlParams.get('code');
 		if (!code) {
-			onerror('No code in URL');
-			console.error('No code in URL');
-			return;
+			throw new Error('No code in URL');
 		} else {
-			this.getFirstToken(code, onerror);
+			await this.getFirstToken(code);
 		}
 	}
 
 	/**
 	 * Initialize the token data
 	 * @param code provided by callback
-	 * @param onerror in case of a request error
 	 * @returns
 	 */
-	private static async getFirstToken(code: string, onerror: (error: string) => void) {
+	private async getFirstToken(code: string) {
 		// stored in the previous step
 		const codeVerifier = localStorage.getItem('code_verifier');
 		if (!codeVerifier) {
-			onerror('No code verifier in local storage');
-			console.error('No code verifier in local storage');
-			return;
+			throw new Error('No code verifier in local storage');
 		}
 
 		const payload = {
@@ -195,23 +232,19 @@ class SpotifyEndpoint {
 
 		const body = await fetch(Environment.tokenUrl, payload);
 		if (body.status !== 200) {
-			onerror('Failed to get token');
-			console.error('Failed to get token');
-			return;
+			throw new Error('Failed to get token');
 		}
 		const response = await body.json();
 
 		if (response.error) {
-			onerror(response.error + ': ' + response.error_description);
-			console.error(response.error + ': ' + response.error_description);
-			return;
+			throw new Error(response.error + ': ' + response.error_description);
 		}
 
 		this.tokenData = { token: response as Token, lastRefresh: new Date() };
 		console.log(response);
 	}
 
-	private static async getRefreshToken() {
+	private async getRefreshToken() {
 		// refresh token that has been previously stored
 		const refreshToken = this.tokenData?.token.refresh_token;
 
@@ -249,7 +282,7 @@ class SpotifyEndpoint {
 	 *
 	 * @returns the current token, refresh it using the refresh token if needed
 	 */
-	private static async getCurrentToken() {
+	private async getCurrentToken() {
 		if (!this.tokenData) {
 			throw new Error('No token');
 		}
@@ -267,42 +300,47 @@ class SpotifyEndpoint {
 	/**
 	 * generic API call
 	 * @param url
-	 * @param onerror
 	 */
-	private static async fetchSpotifyApi(
-		url: string,
-		method: HTTPMethod,
-		body: Record<string, string>,
-		onerror: (error: APIError) => void = this.defaultOnError
-	) {
+	private async fetchSpotifyApi(url: string, method: HTTPMethod, body: Record<string, string>) {
 		const token = await this.getCurrentToken();
 		const payload = {
 			method,
 			headers: {
 				Authorization: `Bearer ${token}`
 			},
-			body: new URLSearchParams(body)
+			body: method === 'GET' ? undefined : new URLSearchParams(body)
 		};
 
-		const response = await fetch(Environment.baseUrl + url, payload);
-		const JSON = await response.json();
+		let fetchURL = Environment.baseUrl + url;
+		if (method === 'GET') {
+			fetchURL += '?' + new URLSearchParams(body);
+		}
+
+		const response = await fetch(fetchURL, payload);
+		const json = await response.json();
 		if (response.status >= 200 && response.status < 300) {
-			return JSON;
+			return json;
 		} else {
-			onerror(JSON.error);
-			return null;
+			throw new APIError(json);
 		}
 	}
 
-	private static defaultOnError(error: APIError) {
-		console.error(`Error ${error.status}: ${error.message}`);
-	}
+	public async getUserPlaylists(limit: number = 20, offset: number = 0): Promise<Playlists> {
+		if (this.cache.playlists) {
+			return this.cache.playlists;
+		}
 
-	public static async getUserPlaylists(limit: number = 20, offset: number = 0): Promise<Playlists | null> {
-		return this.fetchSpotifyApi('me/playlists', 'GET', {
+		const response = await this.fetchSpotifyApi('me/playlists', 'GET', {
 			limit: limit.toString(),
 			offset: offset.toString()
 		});
+		if (response) {
+			this.cache.playlists = response;
+			// eslint-disable-next-line no-self-assign
+			this.cache = this.cache; // update store
+		}
+
+		return response;
 	}
 }
 

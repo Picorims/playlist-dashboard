@@ -1,5 +1,6 @@
 
 <script lang="ts">
+	import SpotifyEndpoint from '$lib/api';
 	/*
     Playlist organizer is a tool to see how playlists are organized and modify them.
     Copyright (C) 2024  Charly Schmidt alias Picorims<picorims.contact@gmail.com>
@@ -19,18 +20,27 @@
     */
 
 	import type { TokenData } from '$lib/api';
+	import APICache from '$lib/cache';
 	import { setContext } from 'svelte';
 	import { writable } from 'svelte/store';
 
 	// Create a store...
-	const tokenStore = writable<TokenData>();
+	const tokenStore = writable<TokenData | null>();
+	const apiCacheStore = writable<APICache>(new APICache());
 
 	// ...and add it to the context for child components to access
 	setContext('tokenStore', tokenStore);
+	setContext('apiCacheStore', apiCacheStore);
 </script>
 
 <header>
 	<h1>Playlist Dashboard</h1>
+	<nav>
+		<ul>
+			<li><a href="/">Sign in</a></li>
+			<li><a href="/home">Home</a></li>
+		</ul>
+	</nav>
 </header>
 
 <section>
@@ -211,6 +221,8 @@
 		width: 100%;
 		background-color: var(--background-100);
 		padding: 1rem 3rem;
+		display: flex;
+		gap: 3rem;
 	}
 	
 	footer {
@@ -225,6 +237,13 @@
 	header h1 {
 		color: var(--primary);
 		margin: 0;
+	}
+
+	nav ul {
+		list-style-type: none;
+		padding: 0;
+		display: flex;
+		gap: 1rem;
 	}
 
 	section {
@@ -262,5 +281,9 @@
 		padding: 1rem;
 		margin: 1rem;
 		box-shadow: 0 4px 8px var(--background-50);
+	}
+
+	:global(a) {
+		color: var(--primary);
 	}
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import SpotifyEndpoint from "$lib/api";
+	import SpotifyEndpoint from '$lib/api';
+	import { getContext, onMount } from 'svelte';
 
 	/*
     Playlist organizer is a tool to see how playlists are organized and modify them.
@@ -19,9 +20,12 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
     */
 
-   function launchAuth() {
-        SpotifyEndpoint.launchSpotifyAuth();
-   }
+	const spotifyEndpoint = new SpotifyEndpoint();
+
+	function launchAuth() {
+          console.log(spotifyEndpoint);
+          spotifyEndpoint.launchSpotifyAuth();
+	}
 </script>
 
 <div class="container card">
