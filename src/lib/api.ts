@@ -387,6 +387,7 @@ class SpotifyEndpoint {
 
 		const response = await fetch(fetchURL, payload);
 		const json = await response.json();
+		console.log('fetchSpotifyApi', url, method, "response: ", json);
 		if (response.status >= 200 && response.status < 300) {
 			return json;
 		} else {
@@ -421,18 +422,17 @@ class SpotifyEndpoint {
 		offset: number = 0,
 		id: string
 	): Promise<[PlaylistItem[], number, boolean]> {
-		if (this.cache.playlistItems[id] && this.cache.playlistItems[id].length > 0) {
-			return [this.cache.playlistItems[id], this.cache.playlistItems[id].length, true]; // from cache ?
+		if (this.cache.playlistItems[id] && this.cache.playlistItems[id].length > offset) {
+			return [this.cache.playlistItems[id].slice(offset, offset + limit), this.cache.playlistItems[id].length, true]; // from cache ?
 		}
 
 		const response = await this.fetchSpotifyApi(`playlists/${id}/tracks`, 'GET', {
 			limit: limit.toString(),
 			offset: offset.toString()
 		});
-		if (response && response.items) {
-			this.cache.playlistItems[id] = response.items;
-			// eslint-disable-next-line no-self-assign
-			this.cache = this.cache; // update store
+
+		if (!response.items) {
+			throw new Error('No items in response');
 		}
 
 		for (const item of response.items) {
@@ -466,19 +466,22 @@ class SpotifyEndpoint {
 					const response = await this.getPlaylistItems(LIMIT, offset, id);
 					if (response) {
 						const [items, total, fromCache] = response;
-						this.cache.playlistItems[id] = this.cache.playlistItems[id].concat(items);
+						if (!fromCache) this.cache.playlistItems[id] = this.cache.playlistItems[id].concat(items);
 						// eslint-disable-next-line no-self-assign
 						this.cache = this.cache;
-						if (offset + LIMIT >= total || fromCache) {
+						if (progressCallback) {
+							progressCallback({ playlist: { pos: i, total: ids.length }, items: { pos: offset, total: total } });
+						}
+						if (offset >= total) {
 							done = true;
 						} else {
 							offset += LIMIT;
 						}
-						if (progressCallback) {
-							progressCallback({ playlist: { pos: i, total: ids.length }, items: { pos: offset, total: total } });
-						}
 					}
 				}
+
+				// eslint-disable-next-line no-self-assign
+				this.cache = this.cache;
 			}
 		}
 

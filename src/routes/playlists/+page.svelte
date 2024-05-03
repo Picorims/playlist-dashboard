@@ -29,8 +29,9 @@
 
 	onMount(() => {
 		spotifyEndpoint
-			.cacheSelectedPlaylists((progress) => {
-				progress = progress;
+			.cacheSelectedPlaylists((progressUpdate) => {
+				progress = progressUpdate;
+				console.log(progress);
 			})
 			.then(() => {
 				table = spotifyEndpoint.getSongTable();
