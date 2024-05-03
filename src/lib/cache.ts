@@ -16,10 +16,18 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import type { Playlists } from "./api";
+import type { Playlist, PlaylistItem, Playlists } from "./api";
 
-class APICache {
+export class APICache {
     public playlists: Playlists | null = null;
+    public playlistMap: Map<string, Playlist> = new Map();
+    public playlistItems: Record<string, PlaylistItem[]> = {};
+    public trackMap: Map<string, PlaylistItem> = new Map();
 }
 
-export default APICache;
+export class SpotifyAppCache {
+    public selectedIDs: string[] = [];
+    public songTable: SongTable = new Map();
+}
+
+export type SongTable = Map<string, Map<string, boolean>>;

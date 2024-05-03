@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	/*
     Playlist organizer is a tool to see how playlists are organized and modify them.
     Copyright (C) 2024  Charly Schmidt alias Picorims<picorims.contact@gmail.com>
@@ -17,24 +18,43 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-	import SpotifyEndpoint from '$lib/api';
+	import SpotifyEndpoint, { type Playlists } from '$lib/api';
 	import { getContext, onMount } from 'svelte';
 
 	const spotifyEndpoint = new SpotifyEndpoint();
 
 	let isError = false;
 
+	let playlists: Playlists;
+	let selectedPlaylists: string[] = [];
+
 	onMount(() => {
 		spotifyEndpoint
 			.getUserPlaylists()
-			.then((playlists) => {
-				console.log(playlists);
+			.then((_playlists) => {
+				_playlists.items.sort((a, b) => a.name.localeCompare(b.name)); 
+				playlists = _playlists;
 			})
 			.catch((error) => {
 				console.error(error);
 				isError = true;
 			});
 	});
+
+	function checkboxUpdate(checkbox: EventTarget | null, playlistId: string) {
+		if (!checkbox) return;
+		const checked = (checkbox as HTMLInputElement).checked;
+		if (checked) {
+			selectedPlaylists.push(playlistId);
+		} else {
+			selectedPlaylists = selectedPlaylists.filter((id) => id !== playlistId);
+		}
+	}
+
+	function preparePlaylistPage() {
+		spotifyEndpoint.saveSelectedIDs(selectedPlaylists);
+		goto('/playlists');
+	}
 </script>
 
 <div class="card">
@@ -46,5 +66,27 @@
 		</p>
 	{:else}
 		<h2>Welcome!</h2>
+
+		<p>Please choose the playlists you want to compare:</p>
+
+		{#if playlists}
+			<ul>
+				{#each playlists.items as playlist}
+					<li>
+						<input
+							type="checkbox"
+							on:change={(event) => checkboxUpdate(event.target, playlist.id)}
+						/>
+						<span>
+							{playlist.name}
+						</span>
+					</li>
+				{/each}
+			</ul>
+
+			<button class="accent-btn" on:click={preparePlaylistPage}>Show playlists</button>
+		{:else}
+			<p>Loading...</p>
+		{/if}
 	{/if}
 </div>

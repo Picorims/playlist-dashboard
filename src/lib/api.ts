@@ -17,7 +17,7 @@
 */
 
 import { getContext } from 'svelte';
-import APICache from './cache';
+import { APICache, SpotifyAppCache, type SongTable } from './cache';
 import Config from './config';
 import { get, type Writable } from 'svelte/store';
 
@@ -40,10 +40,10 @@ export interface APIErrorJSON {
 }
 
 class APIError extends Error {
-    constructor(public json: APIErrorJSON) {
-        super(json.message);
-        Object.setPrototypeOf(this, APIError.prototype);
-    }
+	constructor(public json: APIErrorJSON) {
+		super(json.message);
+		Object.setPrototypeOf(this, APIError.prototype);
+	}
 }
 
 export interface Playlist {
@@ -95,6 +95,39 @@ export interface Playlists {
 	items: Playlist[];
 }
 
+/**
+ * Incomplete, only contains the fields needed for the app
+ */
+export interface PlaylistItem {
+	// https://developer.spotify.com/documentation/web-api/reference/playlists/get-playlists-tracks/
+	track: {
+		album: {
+			images: {
+				url: string;
+				height: number | null;
+				width: number | null;
+			}[];
+			name: string;
+		}
+		artists: Artist[];
+		duration_ms: number;
+		href: string;
+		name: string;
+		preview_url: string | null;
+		is_local: boolean;
+		id: string;
+	};
+}
+
+export interface Artist {
+	name: string;
+}
+
+export interface PlaylistProgress {
+	playlist: { pos: number; total: number };
+	items: { pos: number; total: number };
+}
+
 type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 class Environment {
@@ -108,8 +141,10 @@ class SpotifyEndpoint {
 	// https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow#request-user-authorization
 	private tokenStore: Writable<TokenData | null>;
 	private apiCacheStore: Writable<APICache>;
+	private spotifyAppCacheStore: Writable<SpotifyAppCache>;
 	private _tokenData: TokenData | null = null;
 	private _cache: APICache = new APICache();
+	private _spotifyAppCache: SpotifyAppCache = new SpotifyAppCache();
 
 	private get tokenData(): TokenData | null {
 		return this._tokenData;
@@ -125,22 +160,55 @@ class SpotifyEndpoint {
 		this._cache = value;
 		this.apiCacheStore.set(value);
 	}
+	private get spotifyAppCache(): SpotifyAppCache {
+		return this._spotifyAppCache;
+	}
+	private set spotifyAppCache(value: SpotifyAppCache) {
+		this._spotifyAppCache = value;
+		this.spotifyAppCacheStore.set(value);
+	}
+
+	public getPlaylist(id: string): Playlist | null {
+		return this.cache.playlistMap.get(id) ?? null;
+	}
+
+	public getTrack(id: string): PlaylistItem["track"] | null {
+		return this.cache.trackMap.get(id)?.track ?? null;
+	}
+
+	/**
+	 * Note: do not mutate the returned object
+	 * @returns the song table
+	 */
+	public getSongTable(): Readonly<SongTable> {
+		if (this.spotifyAppCache.songTable.size === 0) {
+			this.buildSongTable();
+		}
+		return this.spotifyAppCache.songTable;
+	}
+
+	get selectedIDs(): readonly string[] {
+		return this.spotifyAppCache.selectedIDs;
+	}
 
 	constructor() {
 		this.tokenStore = getContext('tokenStore');
 		this.apiCacheStore = getContext('apiCacheStore');
+		this.spotifyAppCacheStore = getContext('spotifyAppCacheStore');
 
 		this._tokenData = get(this.tokenStore);
 		this._cache = get(this.apiCacheStore);
+		this._spotifyAppCache = get(this.spotifyAppCacheStore);
 
-		console.log(this.tokenData, this.cache);
-
-		this.tokenStore.subscribe((value) => {
-			console.log('tokenStore', value);
-		});
-		this.apiCacheStore.subscribe((value) => {
-			console.log('apiCacheStore', value);
-		});
+		// this.tokenStore.subscribe((value) => {
+		// 	console.log('tokenStore', value);
+		// });
+		// this.apiCacheStore.subscribe((value) => {
+		// 	console.log('apiCacheStore', value);
+		// });
+		// this.spotifyAppCacheStore.subscribe((value) => {
+		// 	console.log('spotifyAppCacheStore', value);
+		// });
 	}
 
 	private generateRandomString(length: number): string {
@@ -302,6 +370,7 @@ class SpotifyEndpoint {
 	 * @param url
 	 */
 	private async fetchSpotifyApi(url: string, method: HTTPMethod, body: Record<string, string>) {
+		console.log('fetchSpotifyApi', url, method, body);
 		const token = await this.getCurrentToken();
 		const payload = {
 			method,
@@ -325,7 +394,7 @@ class SpotifyEndpoint {
 		}
 	}
 
-	public async getUserPlaylists(limit: number = 20, offset: number = 0): Promise<Playlists> {
+	public async getUserPlaylists(limit: number = 50, offset: number = 0): Promise<Playlists> {
 		if (this.cache.playlists) {
 			return this.cache.playlists;
 		}
@@ -340,7 +409,106 @@ class SpotifyEndpoint {
 			this.cache = this.cache; // update store
 		}
 
+		for (const playlist of response.items) {
+			this.cache.playlistMap.set(playlist.id, playlist);
+		}
+
 		return response;
+	}
+
+	private async getPlaylistItems(
+		limit: number = 50,
+		offset: number = 0,
+		id: string
+	): Promise<[PlaylistItem[], number, boolean]> {
+		if (this.cache.playlistItems[id] && this.cache.playlistItems[id].length > 0) {
+			return [this.cache.playlistItems[id], this.cache.playlistItems[id].length, true]; // from cache ?
+		}
+
+		const response = await this.fetchSpotifyApi(`playlists/${id}/tracks`, 'GET', {
+			limit: limit.toString(),
+			offset: offset.toString()
+		});
+		if (response && response.items) {
+			this.cache.playlistItems[id] = response.items;
+			// eslint-disable-next-line no-self-assign
+			this.cache = this.cache; // update store
+		}
+
+		for (const item of response.items) {
+			this.cache.trackMap.set(item.track.id, item);
+			// eslint-disable-next-line no-self-assign
+			this.cache = this.cache;
+		}
+
+		return [response.items, response.total, false]; // from cache ?
+	}
+
+	public saveSelectedIDs(ids: string[]) {
+		this.spotifyAppCache.selectedIDs = [...ids];
+		// eslint-disable-next-line no-self-assign
+		this.spotifyAppCache = this.spotifyAppCache;
+	}
+
+	public async cacheSelectedPlaylists(progressCallback: (progress: PlaylistProgress) => void | undefined) {
+		const ids = this.spotifyAppCache.selectedIDs;
+		for (let i = 0; i < ids.length; i++) {
+			const id = ids[i];
+			if (progressCallback) {
+				progressCallback({ playlist: { pos: i, total: ids.length }, items: { pos: 0, total: 100_000 } });
+			}
+			if (!this.cache.playlistItems[id]) {
+				this.cache.playlistItems[id] = [];
+				let done = false;
+				let offset = 0;
+				const LIMIT = 50;
+				while (!done) {
+					const response = await this.getPlaylistItems(LIMIT, offset, id);
+					if (response) {
+						const [items, total, fromCache] = response;
+						this.cache.playlistItems[id] = this.cache.playlistItems[id].concat(items);
+						// eslint-disable-next-line no-self-assign
+						this.cache = this.cache;
+						if (offset + LIMIT >= total || fromCache) {
+							done = true;
+						} else {
+							offset += LIMIT;
+						}
+						if (progressCallback) {
+							progressCallback({ playlist: { pos: i, total: ids.length }, items: { pos: offset, total: total } });
+						}
+					}
+				}
+			}
+		}
+
+		this.buildSongTable();
+	}
+
+	private buildSongTable() {
+		const table: SongTable = new Map();
+		const playlistIds = this.selectedIDs;
+		for (const pid of playlistIds) {
+			console.log('buildSongTable', pid, this.cache.playlistItems[pid]);
+			for (const item of this.cache.playlistItems[pid]) {
+				if (!table.has(item.track.id)) {
+					const m = new Map();
+					for (const pid2 of playlistIds) {
+						m.set(pid2, false);
+					}
+					table.set(item.track.id, m);
+				}
+				table.get(item.track.id)?.set(pid, true);				
+			}
+		}
+
+		console.log('buildSongTable', table);
+
+		this.spotifyAppCache.songTable = table;
+		// eslint-disable-next-line no-self-assign
+		this.spotifyAppCache = this.spotifyAppCache;
+
+		return table;
 	}
 }
 

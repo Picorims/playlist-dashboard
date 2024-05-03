@@ -20,41 +20,45 @@
     */
 
 	import type { TokenData } from '$lib/api';
-	import APICache from '$lib/cache';
+	import { APICache, SpotifyAppCache } from '$lib/cache';
 	import { setContext } from 'svelte';
 	import { writable } from 'svelte/store';
 
 	// Create a store...
 	const tokenStore = writable<TokenData | null>();
 	const apiCacheStore = writable<APICache>(new APICache());
+	const spotifyAppCache = writable<SpotifyAppCache>(new SpotifyAppCache());
 
 	// ...and add it to the context for child components to access
 	setContext('tokenStore', tokenStore);
 	setContext('apiCacheStore', apiCacheStore);
+	setContext('spotifyAppCacheStore', spotifyAppCache);
 </script>
 
-<header>
-	<h1>Playlist Dashboard</h1>
-	<nav>
-		<ul>
-			<li><a href="/">Sign in</a></li>
-			<li><a href="/home">Home</a></li>
-		</ul>
-	</nav>
-</header>
+<div class="page-container">
+	<header>
+		<h1>Playlist Dashboard</h1>
+		<nav>
+			<ul>
+				<li><a href="/">Sign in</a></li>
+				<li><a href="/home">Home</a></li>
+			</ul>
+		</nav>
+	</header>
 
-<section>
-	<slot />
-</section>
+	<section>
+		<slot />
+	</section>
 
-<footer>
-	<p>
-		Playlist organizer is a tool to see how playlists are organized and modify them.
-	</p>
-	<p>
-		Copyright (C) 2024  Charly Schmidt alias Picorims &lt;picorims.contact@gmail.com&gt;
-	</p>
-</footer>
+	<footer>
+		<p>
+			Playlist organizer is a tool to see how playlists are organized and modify them.
+		</p>
+		<p>
+			Copyright (C) 2024  Charly Schmidt alias Picorims &lt;picorims.contact@gmail.com&gt;
+		</p>
+	</footer>
+</div>
 
 <style>
 	/*https://www.realtimecolors.com/?colors=d4f8f6-051d1c-86ebea-471994-29ece2&fonts=Poppins-Poppins*/
@@ -215,6 +219,18 @@
 	:global(body) {
 		margin: 0;
 		padding: 0;
+		height: 100vh;
+		overflow-y: scroll;
+	}
+
+	:global(*) {
+		box-sizing: border-box;
+	}
+
+	div.page-container {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
 	}
 
 	header {
@@ -226,8 +242,6 @@
 	}
 	
 	footer {
-		position: fixed;
-		bottom: 0;
 		width: 100%;
 		padding: 0.5rem 3rem;
 		font-size: 0.8rem;
@@ -237,6 +251,13 @@
 	header h1 {
 		color: var(--primary);
 		margin: 0;
+	}
+	@media screen and (max-width: 640px) {
+		header h1 {
+			font-size: 1.5rem;
+			display: inline-block;
+			max-width: 6em;
+		}
 	}
 
 	nav ul {
@@ -248,6 +269,7 @@
 
 	section {
 		padding: 1rem 3rem;
+		flex-grow: 1;
 	}
 
 
@@ -285,5 +307,11 @@
 
 	:global(a) {
 		color: var(--primary);
+	}
+
+	:global(input[type="checkbox"]) {
+		width: 1rem;
+		height: 1rem;
+		margin: 0 0.5rem;
 	}
 </style>
