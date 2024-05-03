@@ -81,7 +81,7 @@
 								<img
 									width="40"
 									height="40"
-									src={spotifyEndpoint.getTrack(trackId)?.album.images[0].url}
+									src={spotifyEndpoint.getTrack(trackId)?.album.images[0]?.url}
 									alt={spotifyEndpoint.getTrack(trackId)?.album.name}
 								/>
 							</div>
